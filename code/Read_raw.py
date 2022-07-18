@@ -1,8 +1,8 @@
 # this file can also be used for reading the rectangular video
-BoundingW = [80,85,80,75,80]
-BoundingH = 155
-BoundingY = 10
-Bonding_location = [70,155,255,355,440]
+BoundingW = [80,80,80,75,80]
+BoundingH = 160
+BoundingY = 1
+Bonding_location = [55,145,240,345,430]
 root = "E:/database/soft phantom recording force videos/"
 import pytesseract
 pytesseract.pytesseract.tesseract_cmd = r"E:/software_packages/Tesseract/tesseract.exe"
@@ -15,7 +15,7 @@ operatedir = root + "raw/tube1slow/"
 operatedir = root + "raw/tube2 slow long/"
 operatedir = root + "raw/tube3vain/"
 operatedir = root + "raw/sqr2/"
-operatedir = root + "raw/20220712_182646.mp4"  # 100 seconds
+operatedir = root + "raw/20220713_181424.mp4"  # 100 seconds
 import imutils
 from imutils.perspective import four_point_transform
 from imutils import contours
@@ -91,13 +91,30 @@ ret, frame = cap.read()
 if ret == True:
     H, W, _ = frame.shape
 save_sequence_num = 0
+displayCnt = None
+
 while (cap.isOpened()):
     # Capture frame-by-frame
     ret, frame = cap.read()
     if ret == True:
+        base_center = np.array([(1100+1350)/2, (150 + 550)/2])
+        base_H = 1350 - 1100
+        base_W = 550 - 150
+
 
         # Display the resulting frame
-
+        # if displayCnt is not None:
+        #     New_CenterX= np.sum(displayCnt.reshape(4, 2)[:,0])/4
+        #     New_CenterY = np.sum(displayCnt.reshape(4, 2)[:, 1]) / 4
+        #     New_Center =  np.array([base_center[0]-base_H/2+ New_CenterY, base_center[1]-base_W/2+New_CenterX])
+        #     CenterShift = New_Center - base_center
+        #     displayCnt[:,:,0] = displayCnt[:,:,0] - CenterShift [1]
+        #     displayCnt[:,:,1] = displayCnt[:,:,1] - CenterShift [0]
+        #
+        # else:
+        #     New_Center = base_center
+        New_Center = base_center
+        base_center= New_Center
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
         gray = frame[:,:,1]
@@ -105,10 +122,14 @@ while (cap.isOpened()):
         frame_norm = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
         cv2.imwrite(save_dir + str(save_sequence_num) + ".jpg", image_norm)
 
-        crop =  image_norm[900:1041,300:600]
+        crop =  image_norm[900:1041,300:600] # for video 1
+        crop =  image_norm[int(New_Center[0]-base_H/2):int(New_Center[0]+base_H/2),int(New_Center[1]-base_W/2):int(New_Center[1]+base_W/2)] # for video 2
+
         # crop = cv2.resize(crop, [600,280], interpolation=cv2.INTER_AREA)
         H, W  = crop.shape
         image = frame_norm[900:1041, 300:600]
+        image = frame_norm[int(New_Center[0]-base_H/2):int(New_Center[0]+base_H/2),int(New_Center[1]-base_W/2):int(New_Center[1]+base_W/2)]
+
         # image = cv2.resize(image, [600,280], interpolation=cv2.INTER_AREA)
         # pre-process the image by resizing it, converting it to
         # graycale, blurring it, and computing an edge map
@@ -127,8 +148,9 @@ while (cap.isOpened()):
                                 cv2.CHAIN_APPROX_SIMPLE)
         cnts = imutils.grab_contours(cnts)
         cnts = sorted(cnts, key=cv2.contourArea, reverse=True)
-        displayCnt = None
+        # displayCnt = None
         # loop over the contours
+        last_cent = displayCnt
         for c in cnts:
             # approximate the contour
             peri = cv2.arcLength(c, True)
@@ -138,8 +160,19 @@ while (cap.isOpened()):
             if len(approx) == 4:
                 displayCnt = approx
                 break
-        if save_sequence_num == 322:
-            pass
+        if last_cent is None:
+            last_cent = displayCnt
+        Last_CenterX = np.sum(last_cent.reshape(4, 2)[:, 0]) / 4
+        Last_CenterY = np.sum(last_cent.reshape(4, 2)[:, 1]) / 4
+
+        New_CenterX = np.sum(displayCnt.reshape(4, 2)[:, 0]) / 4
+        New_CenterY = np.sum(displayCnt.reshape(4, 2)[:, 1]) / 4
+
+        # if (abs(New_CenterX - Last_CenterX)>100 or abs(New_CenterY - Last_CenterY)>100 ):
+        if   np.sum(abs(displayCnt - last_cent))>100:
+            displayCnt = last_cent
+
+
         warped = four_point_transform(gray, displayCnt.reshape(4, 2))
         warped = cv2.resize(warped, [540, 240], interpolation=cv2.INTER_AREA)
         output = four_point_transform(image, displayCnt.reshape(4, 2))
