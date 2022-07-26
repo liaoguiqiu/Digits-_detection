@@ -1,8 +1,8 @@
 # this file can also be used for reading the rectangular video
-BoundingW = [80,80,80,75,80]
-BoundingH = 160
-BoundingY = 1
-Bonding_location = [55,145,240,345,430]
+BoundingW = [80,80,80,80,80]
+BoundingH = [160,162,160,165,160]
+BoundingY = [5 , 5, 5,1,1]
+Bonding_location = [50,149,245,345,430]
 root = "E:/database/soft phantom recording force videos/"
 import pytesseract
 pytesseract.pytesseract.tesseract_cmd = r"E:/software_packages/Tesseract/tesseract.exe"
@@ -15,14 +15,22 @@ operatedir = root + "raw/tube1slow/"
 operatedir = root + "raw/tube2 slow long/"
 operatedir = root + "raw/tube3vain/"
 operatedir = root + "raw/sqr2/"
-operatedir = root + "raw/20220713_181424.mp4"  # 100 seconds
+Rotated_FLAG = False
+# operatedir = root + "raw/open -0 bending move phan no trans.mp4"  # 100 seconds
+operatedir = root + "raw/open -3 move end.mp4"  # 100 seconds
+# open -6 bending move phan trans
+# close 9 move phan trans
+# close -5 move end
+# operatedir = root + "raw/close 10 move phan no trans-0.mp4"  # 100 seconds
+
+
 import imutils
 from imutils.perspective import four_point_transform
 from imutils import contours
 import cv2
 import math
 import numpy as np
-
+import scipy.signal as signal
 import pandas as pd
 import os
 import torch
@@ -33,17 +41,23 @@ from matplotlib.pyplot import *
 from mpl_toolkits.mplot3d import Axes3D
 # from Correct_sequence_integral import read_start
 
-
-
+from databufferExcel import EXCEL_saver
+metrics_saver = EXCEL_saver(3) # just save tje original and the filterdd
 base_dir = os.path.basename(os.path.normpath(operatedir))
 save_dir = root + "original/" + base_dir + "/"
 save_crop_dir = root + "original_cropped/" + base_dir + "/"
+save_outimg_dir = root + "img_process/" + base_dir + "/"
+save_excel_dir = root + "excel_singnals/" + base_dir + "/"
 
 # save_dir_cir = root + "resize_circular/" + base_dir + "/"
 try:
     os.stat(save_dir)
 except:
     os.makedirs(save_dir)
+try:
+    os.stat(save_outimg_dir)
+except:
+    os.makedirs(save_outimg_dir)
 #
 try:
     os.stat(save_crop_dir)
@@ -96,10 +110,20 @@ displayCnt = None
 while (cap.isOpened()):
     # Capture frame-by-frame
     ret, frame = cap.read()
-    if ret == True:
-        base_center = np.array([(1100+1350)/2, (150 + 550)/2])
-        base_H = 1350 - 1100
-        base_W = 550 - 150
+    save_sequence_num += 1
+    if ret == True  :
+        if (save_sequence_num < 2):
+            continue
+        # cornerBL=[1150,316]
+        # cornerTR=[990,540]
+        # cornerBL = [1324, 210]
+        # cornerTR = [1084, 578]
+        cornerBL = [1080, 372]
+        cornerTR = [942, 609]
+
+        base_center = np.array([(cornerBL[0] +cornerTR[0])/2, (cornerTR[1]+cornerBL[1])/2])
+        base_H = cornerBL[0] - cornerTR[0]
+        base_W =  cornerTR[1] - cornerBL[1]
 
 
         # Display the resulting frame
@@ -118,8 +142,12 @@ while (cap.isOpened()):
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
         gray = frame[:,:,1]
-        image_norm = cv2.rotate(gray, cv2.ROTATE_90_CLOCKWISE)
-        frame_norm = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+        if Rotated_FLAG == True:
+            image_norm = cv2.rotate(gray, cv2.ROTATE_90_CLOCKWISE)
+            frame_norm = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+        else:
+            image_norm =  gray
+            frame_norm =  frame
         cv2.imwrite(save_dir + str(save_sequence_num) + ".jpg", image_norm)
 
         crop =  image_norm[900:1041,300:600] # for video 1
@@ -135,10 +163,16 @@ while (cap.isOpened()):
         # graycale, blurring it, and computing an edge map
 
         gray = crop
-        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-        edged = cv2.Canny(blurred, 30, 200, 255)
+        blurred = cv2.GaussianBlur(gray, (11, 11), 0)
+        edged = cv2.Canny(blurred, 10, 160, 255)
+        # edged = cv2.threshold(blurred, 0, 255,
+        #                         cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+
+
+        edged = cv2.morphologyEx(edged, cv2.MORPH_CLOSE, kernel)
         cv2.imshow('edged',edged)
-        cv2.waitKey(10)
+        cv2.waitKey(1)
         # find contours in the edge map, then sort them by their
         # size in descending order
         if save_sequence_num == 321:
@@ -154,7 +188,7 @@ while (cap.isOpened()):
         for c in cnts:
             # approximate the contour
             peri = cv2.arcLength(c, True)
-            approx = cv2.approxPolyDP(c, 0.1 * peri, True)
+            approx = cv2.approxPolyDP(c, 0.05 * peri, True)
             # if the contour has four vertices, then we have found
             # the thermostat display
             if len(approx) == 4:
@@ -162,15 +196,18 @@ while (cap.isOpened()):
                 break
         if last_cent is None:
             last_cent = displayCnt
-        Last_CenterX = np.sum(last_cent.reshape(4, 2)[:, 0]) / 4
-        Last_CenterY = np.sum(last_cent.reshape(4, 2)[:, 1]) / 4
 
-        New_CenterX = np.sum(displayCnt.reshape(4, 2)[:, 0]) / 4
-        New_CenterY = np.sum(displayCnt.reshape(4, 2)[:, 1]) / 4
+        # Last_CenterX = np.sum(last_cent.reshape(4, 2)[:, 0]) / 4
+        # Last_CenterY = np.sum(last_cent.reshape(4, 2)[:, 1]) / 4
+        #
+        # New_CenterX = np.sum(displayCnt.reshape(4, 2)[:, 0]) / 4
+        # New_CenterY = np.sum(displayCnt.reshape(4, 2)[:, 1]) / 4
 
         # if (abs(New_CenterX - Last_CenterX)>100 or abs(New_CenterY - Last_CenterY)>100 ):
-        if   np.sum(abs(displayCnt - last_cent))>100:
+        if   np.sum(abs(displayCnt - last_cent))>5:
             displayCnt = last_cent
+        else:
+            displayCnt = 0.1* displayCnt + 0.9* last_cent
 
 
         warped = four_point_transform(gray, displayCnt.reshape(4, 2))
@@ -184,18 +221,30 @@ while (cap.isOpened()):
         # operations to cleanup the thresholded image
         thresh = cv2.threshold(warped, 0, 255,
                                cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)[1]
+        for i in np.arange(5):
+
+            # extract the digit ROI
+            w= BoundingW[i]
+            h= BoundingH[i]
+            y=BoundingY[i]
+            x = Bonding_location[i]
+            # (x, y, w, h) = cv2.boundingRect(c)
+            roi = warped[y:y + h, x:x + w ]
+            thresh [y:y + h, x:x + w] = cv2.threshold(roi, 0, 255,
+                               cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)[1]
+
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (10, 10))
 
         # kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-        thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
+        # thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
         invert = 255 - thresh
         data = pytesseract.image_to_string(invert, lang='eng', config='--psm 6')
         print(data)
-        # thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
+        thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
 
         # thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
         cv2.imshow('thresh', thresh)
-        cv2.waitKey(10)
+        cv2.waitKey(1)
 
         # find contours in the thresholded image, then initialize the
         # digit contours lists
@@ -217,13 +266,14 @@ while (cap.isOpened()):
         digits = []
         # loop over each of the digits
         # TODO: we know there are 5 digits with fixed location
+
         # for c in digitCnts :
         for i in np.arange(5):
 
             # extract the digit ROI
             w= BoundingW[i]
-            h= BoundingH
-            y=BoundingY
+            h= BoundingH[i]
+            y=BoundingY[i]
             x = Bonding_location[i]
             # (x, y, w, h) = cv2.boundingRect(c)
             roi = thresh[y:y + h, x:x + w]
@@ -237,7 +287,7 @@ while (cap.isOpened()):
                 ((0, 0), (w, dH)),  # top
                 ((0, 0), (dW, h // 2)),  # top-left
                 ((w - dW, 0), (w, h // 2)),  # top-right
-                ((0, (h // 2) - dHC), (w, (h // 2) + dHC)),  # center
+                ((0+dW, (h // 2) - dHC), (w-dW, (h // 2) + dHC)),  # center
                 ((0, h // 2), (dW, h)),  # bottom-left
                 ((w - dW, h // 2), (w, h)),  # bottom-right
                 ((0, h - dH), (w, h))  # bottom
@@ -253,7 +303,7 @@ while (cap.isOpened()):
                 area = (xB - xA) * (yB - yA)
                 # if the total number of non-zero pixels is greater than
                 # 50% of the area, mark the segment as "on"
-                if total / float(area+0.001) > 0.3:
+                if total / float(area+0.001) > 0.20:
                     on[i] = 1
             # lookup the digit and draw it on the image
             try:
@@ -270,12 +320,20 @@ while (cap.isOpened()):
                         cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 0), 2)
         # display the digits
         # print(u"{}{}.{} \u00b0C".format(*digits))
+
+        # TODO: decode the list of digits
+        if ( save_sequence_num % 6 ==0):
+            Original_va = 10 * digits[0] + digits[1] + 0.1 * digits[2] + 0.01 * digits[3] +  0.001 * digits[4]
+            # duplicate the value and then leave the second colum for filtering
+            metrics_saver.append_save([Original_va,Original_va,Original_va],save_excel_dir)
         cv2.imshow("Input", image)
         cv2.imshow("Output", output)
         cv2.waitKey(1)
         cv2.imwrite(save_crop_dir + str(save_sequence_num) + ".jpg", warped)
+        cv2.imwrite(save_outimg_dir + str(save_sequence_num) + ".jpg", output)
 
-        save_sequence_num += 1
+
+
         print("[%s]   is processed." % (save_sequence_num))
 
 
