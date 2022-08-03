@@ -21,8 +21,8 @@ class EXCEL_saver(object):
             os.makedirs(save_dir)
         self.plots = np.append(self.plots, [vector], axis=0)
         if (self.save_cnt % 10 == 0):  # each 10 filter
-            self.plots[:,1] = signal.medfilt(self.plots[:,1] ,3)
-            self.plots[:, 1] = signal.medfilt(self.plots[:, 1], 3)
+            self.plots[:,1] = signal.medfilt(self.plots[:,1] ,5)
+            # self.plots[:, 1] = signal.medfilt(self.plots[:, 1], 3)
             a = 1.0
             b=[0.25,0.25,0.25,0.25]
             self.plots[:, 2] = signal.lfilter(b,a, self.plots[:,1])
