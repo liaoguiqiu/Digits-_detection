@@ -20,7 +20,7 @@ operatedir = root + "raw/tube3vain/"
 operatedir = root + "raw/sqr2/"
 # operatedir = root + "raw/open -0 bending move phan no trans.mp4"  # 100 seconds
 operatedir = root + "raw/Endoscopic Phantom No trqns -110 0 alpha 995 +stab/"  # 100 seconds
-operatedir = root + "raw/Endoscopic Phantom no trans open -1 +stab/"  # 100 seconds
+operatedir = root + "raw/Endoscopic Phantom stiffer + trans open -5 +stab 4th/"  # 100 seconds
 
 
 # operatedir = root + "raw/New video.mp4"  # 100 seconds
@@ -115,7 +115,7 @@ displayCnt = None
 def process_frame(frame):
     Downsample = 1
     global displayCnt
-    cornerBL = [300, 300]
+    cornerBL = [300, 270]
     cornerTR = [120, 560]
 
     base_center = np.array([(cornerBL[0] + cornerTR[0]) / 2, (cornerTR[1] + cornerBL[1]) / 2])
@@ -164,7 +164,7 @@ def process_frame(frame):
     # graycale, blurring it, and computing an edge map
 
     gray = crop
-    blurred = cv2.GaussianBlur(gray, (11, 11), 0)
+    blurred = cv2.GaussianBlur(gray, (7, 7), 0)
     edged = cv2.Canny(blurred, 10, 200, 255)
     # edged = cv2.threshold(blurred, 0, 255,
     #                         cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
@@ -193,6 +193,7 @@ def process_frame(frame):
         # the thermostat display
         if len(approx) == 4:
             displayCnt = approx
+            screen_contour = c
             break
     if last_cent is None:
         last_cent = displayCnt
@@ -207,12 +208,16 @@ def process_frame(frame):
     if np.sum(abs(displayCnt - last_cent)) > 100:
         displayCnt = last_cent
     else:
-        displayCnt = 0.6 * displayCnt + 0.4 * last_cent
-
+        displayCnt = 0.5 * displayCnt + 0.5 * last_cent
+    RGB_edged = cv2.merge((edged,edged,edged))
+    cv2.drawContours(RGB_edged, approx, -1, (0, 255, 0), 8)
+    cv2.imshow('Screen area', RGB_edged)
     warped = four_point_transform(gray, displayCnt.reshape(4, 2))
     warped = cv2.resize(warped, [540, 240], interpolation=cv2.INTER_AREA)
     output = four_point_transform(image, displayCnt.reshape(4, 2))
+
     output = cv2.resize(output, [540, 240], interpolation=cv2.INTER_AREA)
+
 
     cv2.imshow('output', output)
     cv2.waitKey(10)
@@ -313,9 +318,10 @@ def process_frame(frame):
             print("Oops!  That was no valid number.  Try again...")
             digit = 0
         digits.append(digit)
-        cv2.rectangle(output, (x, y), (x + w, y + h), (0, 255, 0), 1)
+        cv2.rectangle(output, (x, y), (x + w, y + h), (0, 255, 255), 2)
         cv2.putText(output, str(digit), (x, y + h + 16),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 255, 0), 2)
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 0, 255), 2)
+        cv2.rectangle(thresh, (x, y), (x + w, y + h), (255, 255, 255), 2)
     # display the digits
     # print(u"{}{}.{} \u00b0C".format(*digits))
 
@@ -324,6 +330,7 @@ def process_frame(frame):
         Original_va = 10 * digits[0] + digits[1] + 0.1 * digits[2] + 0.01 * digits[3] + 0.001 * digits[4]
         # duplicate the value and then leave the second colum for filtering
         metrics_saver.append_save([Original_va, Original_va, Original_va], save_excel_dir)
+    cv2.imshow('thresh_bond', thresh)
     cv2.imshow("Input", image)
     cv2.imshow("Output", output)
     cv2.waitKey(1)
